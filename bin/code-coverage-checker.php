@@ -46,6 +46,7 @@ foreach ($autoloaderFiles as $autoloaderFile) {
 // construct symfony io object to format output
 
 $inputDefinition = new InputDefinition();
+$inputDefinition->addArgument(new InputArgument('coverage-file', InputArgument::REQUIRED));
 $inputDefinition->addArgument(new InputArgument('metric', InputArgument::REQUIRED));
 $inputDefinition->addArgument(new InputArgument('threshold', InputArgument::REQUIRED));
 $inputDefinition->addArgument(new InputArgument('paths', InputArgument::IS_ARRAY));
@@ -61,7 +62,7 @@ $metric = $input->getArgument('metric');
 $threshold = min(100, max(0, (float) $input->getArgument('threshold')));
 
 // load code coverage report
-$coverageReportPath = getcwd() . '/Tests/reports/coverage.php';
+$coverageReportPath = getcwd() . '/' . $input->getArgument('coverage-file');
 if (!is_readable($coverageReportPath)) {
     $io->error('Coverage report file "' . $coverageReportPath . '" is not readable or does not exist.');
     exit(1);
