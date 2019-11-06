@@ -3,5 +3,8 @@
     "description": "A code coverage checker for phpunit",
     "type": "library",
     "license": "MIT",
-    "require": {}
+    "bin": ["bin/code-coverage-checker"],
+    "require": {
+        "php": "^7.2"
+    }
 }
