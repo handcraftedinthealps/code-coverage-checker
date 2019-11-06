@@ -1,0 +1,7 @@
+{
+    "name": "handcraftedinthealps/code-coverage-checker",
+    "description": "A code coverage checker for phpunit",
+    "type": "library",
+    "license": "MIT",
+    "require": {}
+}
