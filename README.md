@@ -26,7 +26,12 @@ vendor/bin/code-coverage-checker "Tests/reports/coverage.php" "line" "96.0"
 ```
 
 Instead of `line` you can use `class` or `method`.
+You can also check only specific directories:
 
-**Example Output:**
+```bash
+vendor/bin/code-coverage-checker "Tests/reports/coverage.php" "line" "96.0" "Directory/A" "Directory/B"
+```
+
+### Example Output
 
 ![!Exmaple code coverage checker output](docs/images/example.png)
