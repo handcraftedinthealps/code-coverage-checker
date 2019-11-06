@@ -12,15 +12,43 @@ use Symfony\Component\Console\Input\InputDefinition;
 use Symfony\Component\Console\Output\ConsoleOutput;
 use Symfony\Component\Console\Style\SymfonyStyle;
 
-require getcwd() . '/vendor/autoload.php';
-require getcwd() . '/vendor/bin/.phpunit/phpunit-8/vendor/autoload.php';
+// Autoloader
+$autoloaderFiles = [__DIR__ . '/../vendor/autoload.php', __DIR__ . '/../../../autoload.php'];
+
+foreach ($autoloaderFiles as $autoloaderFile) {
+    if (!file_exists($autoloaderFile)) {
+        continue;
+    }
+
+    $loader = require $autoloaderFile;
+
+    $phpunitBridgeDirectory = dirname(realpath($autoloaderFile)) . '/bin/.phpunit';
+
+    if (is_dir($phpunitBridgeDirectory)) {
+        $files = scandir($phpunitBridgeDirectory);
+
+        foreach ($files as $file) {
+            $phpunitAutoloader = $phpunitBridgeDirectory . '/' . $file . '/vendor/autoload.php';
+
+            if (
+                '.' !== $file
+                && '..' !== $file
+                && file_exists($phpunitAutoloader)
+            ) {
+                require $phpunitAutoloader;
+            }
+        }
+    }
+
+    break;
+}
 
 // construct symfony io object to format output
 
 $inputDefinition = new InputDefinition();
 $inputDefinition->addArgument(new InputArgument('metric', InputArgument::REQUIRED));
 $inputDefinition->addArgument(new InputArgument('threshold', InputArgument::REQUIRED));
-$inputDefinition->addArgument(new InputArgument('paths', InputArgument::REQUIRED | InputArgument::IS_ARRAY));
+$inputDefinition->addArgument(new InputArgument('paths', InputArgument::IS_ARRAY));
 
 // Trim any options passed to the command
 $argvArguments = explode(' ', explode(' --', implode(' ', $argv))[0]);
@@ -38,11 +66,25 @@ if (!is_readable($coverageReportPath)) {
     $io->error('Coverage report file "' . $coverageReportPath . '" is not readable or does not exist.');
     exit(1);
 }
+
+/** @var CodeCoverage $coverage */
 $coverage = require $coverageReportPath;
 
 $exit = 0;
 
-foreach ($input->getArgument('paths') as $path) {
+$paths = $input->getArgument('paths');
+
+// Check all root paths if no paths are given
+if (empty($paths)) {
+    /** @var Directory $report */
+    foreach ($coverage->getReport() as $report) {
+        if (is_dir($report->getPath()) && dirname($report->getPath()) === getcwd()) {
+            $paths[] = basename($report->getPath());
+        }
+    }
+}
+
+foreach ($paths as $path) {
     $exit += assertCodeCoverage($coverage, $path, $metric, $threshold);
 }
 
@@ -134,9 +176,11 @@ function printCodeCoverageReport(Directory $pathReport): void
 
 function getReportForPath(Directory $rootReport, string $path): ?Directory
 {
+    $currentPath = getcwd() . DIRECTORY_SEPARATOR . $path;
+
     /** @var Directory $report */
     foreach ($rootReport as $report) {
-        if (false !== mb_stripos($report->getPath(), $path)) {
+        if (0 === mb_strpos($report->getPath(), $currentPath)) {
             return $report;
         }
     }
