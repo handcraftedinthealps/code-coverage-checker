@@ -5,6 +5,7 @@
     "license": "MIT",
     "bin": ["bin/code-coverage-checker"],
     "require": {
-        "php": "^7.2"
+        "php": "^7.2",
+        "symfony/console": "^2.8 || ^3.0 || ^4.0 || ^5.0"
     }
 }
