@@ -71,8 +71,6 @@ if (!is_readable($coverageReportPath)) {
 /** @var CodeCoverage $coverage */
 $coverage = require $coverageReportPath;
 
-$exit = 0;
-
 $paths = $input->getArgument('paths');
 
 // Check all root paths if no paths are given
@@ -85,15 +83,29 @@ if (empty($paths)) {
     }
 }
 
+$totalExecutableLines = 0;
+$totalCoveredLines = 0;
+$exit = 0;
+
 foreach ($paths as $path) {
     $exit += assertCodeCoverage($coverage, $path, $metric, $threshold);
 }
+
+$message = sprintf(
+    'Line Coverage for all included files: %.2F%% (%d/%d).',
+    $totalCoveredLines / $totalExecutableLines * 100,
+    $totalCoveredLines,
+    $totalExecutableLines,
+);
+$io->block($message, 'INFO', 'fg=black;bg=white', ' ', true);
 
 exit($exit);
 
 function assertCodeCoverage(CodeCoverage $coverage, string $path, string $metric, float $threshold)
 {
     global $io;
+    global $totalExecutableLines;
+    global $totalCoveredLines;
 
     $rootReport = $coverage->getReport();
     $pathReport = getReportForPath($rootReport, $path);
@@ -105,6 +117,8 @@ function assertCodeCoverage(CodeCoverage $coverage, string $path, string $metric
     }
 
     printCodeCoverageReport($pathReport);
+    $totalExecutableLines = $totalExecutableLines + $pathReport->getNumExecutableLines();
+    $totalCoveredLines = $totalCoveredLines + $pathReport->getNumExecutedLines();
 
     if ('line' === $metric) {
         $reportedCoverage = $pathReport->getLineExecutedPercent();
@@ -127,6 +141,7 @@ function assertCodeCoverage(CodeCoverage $coverage, string $path, string $metric
             $path,
             $threshold
         ));
+        $io->newLine(1);
 
         return 1;
     }
@@ -137,6 +152,7 @@ function assertCodeCoverage(CodeCoverage $coverage, string $path, string $metric
         $path,
         $threshold
     ));
+    $io->newLine(1);
 
     return 0;
 }
@@ -172,7 +188,7 @@ function printCodeCoverageReport(Directory $pathReport): void
 
     $io->title('Code coverage report for directory "' . $pathReport->getPath() . '"');
     $table->render();
-    $io->newLine(2);
+    $io->newLine(1);
 }
 
 function getReportForPath(Directory $rootReport, string $path): ?Directory
