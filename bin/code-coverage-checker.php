@@ -95,7 +95,7 @@ $message = sprintf(
     'Line Coverage for all included files: %.2F%% (%d/%d).',
     $totalCoveredLines / $totalExecutableLines * 100,
     $totalCoveredLines,
-    $totalExecutableLines,
+    $totalExecutableLines
 );
 $io->block($message, 'INFO', 'fg=black;bg=white', ' ', true);
 
