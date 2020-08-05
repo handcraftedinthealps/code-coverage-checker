@@ -22,9 +22,17 @@ foreach ($autoloaderFiles as $autoloaderFile) {
 
     $loader = require $autoloaderFile;
 
-    $phpunitBridgeDirectory = dirname(realpath($autoloaderFile)) . '/bin/.phpunit';
+    
+    $phpunitBridgeDirectories = [
+        dirname(realpath($autoloaderFile)) . '/bin/.phpunit',
+        dirname(dirname(realpath($autoloaderFile))) . '/bin/.phpunit',
+    ];
 
-    if (is_dir($phpunitBridgeDirectory)) {
+    foreach ($phpunitBridgeDirectories as $phpunitBridgeDirectory) {
+        if (!is_dir($phpunitBridgeDirectory)) {
+            continue;
+        }
+        
         $files = scandir($phpunitBridgeDirectory);
 
         foreach ($files as $file) {
@@ -36,6 +44,8 @@ foreach ($autoloaderFiles as $autoloaderFile) {
                 && file_exists($phpunitAutoloader)
             ) {
                 require $phpunitAutoloader;
+                
+                break 2;
             }
         }
     }
