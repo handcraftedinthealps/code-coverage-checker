@@ -103,7 +103,7 @@ foreach ($paths as $path) {
 
 $message = sprintf(
     'Line Coverage for all included files: %.2F%% (%d/%d).',
-    $totalCoveredLines / $totalExecutableLines * 100,
+    $totalExecutableLines ? $totalCoveredLines / $totalExecutableLines * 100 : 100,
     $totalCoveredLines,
     $totalExecutableLines
 );
