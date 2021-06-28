@@ -22,7 +22,7 @@ foreach ($autoloaderFiles as $autoloaderFile) {
 
     $loader = require $autoloaderFile;
 
-    
+
     $phpunitBridgeDirectories = [
         dirname(realpath($autoloaderFile)) . '/bin/.phpunit',
         dirname(dirname(realpath($autoloaderFile))) . '/bin/.phpunit',
@@ -32,7 +32,7 @@ foreach ($autoloaderFiles as $autoloaderFile) {
         if (!is_dir($phpunitBridgeDirectory)) {
             continue;
         }
-        
+
         $files = scandir($phpunitBridgeDirectory);
 
         foreach ($files as $file) {
@@ -44,7 +44,7 @@ foreach ($autoloaderFiles as $autoloaderFile) {
                 && file_exists($phpunitAutoloader)
             ) {
                 require $phpunitAutoloader;
-                
+
                 break 2;
             }
         }
@@ -87,8 +87,16 @@ $paths = $input->getArgument('paths');
 if (empty($paths)) {
     /** @var Directory $report */
     foreach ($coverage->getReport() as $report) {
-        if (is_dir($report->getPath()) && dirname($report->getPath()) === getcwd()) {
-            $paths[] = basename($report->getPath());
+        if (\method_exists($report, 'getPath')) {
+            // PHPUNIT <= 8
+            $path = $report->getPath();
+        } else {
+            // PHPUNIT 9
+            $path = $report->pathAsString();
+        }
+
+        if (is_dir($path) && dirname($path) === getcwd()) {
+            $paths[] = basename($path);
         }
     }
 }
@@ -127,15 +135,32 @@ function assertCodeCoverage(CodeCoverage $coverage, string $path, string $metric
     }
 
     printCodeCoverageReport($pathReport);
-    $totalExecutableLines = $totalExecutableLines + $pathReport->getNumExecutableLines();
-    $totalCoveredLines = $totalCoveredLines + $pathReport->getNumExecutedLines();
+
+    if (\method_exists($pathReport, 'getNumExecutableLines')) {
+        // PHPUNIT <= 8
+        $pathNumberOfExecutableLines = $pathReport->getNumExecutableLines();
+        $pathNumberOfExecutedLines = $pathReport->getNumExecutedLines();
+        $pathPercentageOfExecutedLines = $pathReport->getLineExecutedPercent();
+        $pathPercentageOfTestedMethods = $pathReport->getTestedMethodsPercent();
+        $pathPercentageOfTestedClasses = $pathReport->getTestedClassesPercent();
+    } else {
+        // PHPUNIT 9
+        $pathNumberOfExecutableLines = $pathReport->numberOfExecutableLines();
+        $pathNumberOfExecutedLines = $pathReport->numberOfExecutedLines();
+        $pathPercentageOfExecutedLines = $pathReport->percentageOfExecutedLines()->asFloat();
+        $pathPercentageOfTestedMethods = $pathReport->percentageOfTestedMethods()->asFloat();
+        $pathPercentageOfTestedClasses = $pathReport->percentageOfTestedClasses()->asFloat();
+    }
+
+    $totalExecutableLines = $totalExecutableLines + $pathNumberOfExecutableLines;
+    $totalCoveredLines = $totalCoveredLines + $pathNumberOfExecutedLines;
 
     if ('line' === $metric) {
-        $reportedCoverage = $pathReport->getLineExecutedPercent();
+        $reportedCoverage = $pathPercentageOfExecutedLines;
     } elseif ('method' === $metric) {
-        $reportedCoverage = $pathReport->getTestedMethodsPercent();
+        $reportedCoverage = $pathPercentageOfTestedMethods;
     } elseif ('class' === $metric) {
-        $reportedCoverage = $pathReport->getTestedClassesPercent();
+        $reportedCoverage = $pathPercentageOfTestedClasses;
     } else {
         $io->error('Coverage metric "' . $metric . '"" is not supported yet.');
 
@@ -179,24 +204,57 @@ function printCodeCoverageReport(Directory $pathReport): void
     $table->setColumnStyle(1, $rightAlignedTableStyle);
     $table->setColumnStyle(2, $rightAlignedTableStyle);
 
+
+    if (\method_exists($pathReport, 'getNumExecutableLines')) {
+        // PHPUNIT <= 8
+        $pathNumberOfExecutableLines = $pathReport->getNumExecutableLines();
+        $pathNumberOfExecutedLines = $pathReport->getNumExecutedLines();
+        $pathPercentageOfExecutedLines = $pathReport->getLineExecutedPercent();
+        $pathPercentageOfTestedMethods = $pathReport->getTestedMethodsPercent();
+        $pathNumberOfTestedMethods = $pathReport->getNumTestedMethods();
+        $pathNumberOfMethods = $pathReport->getNumMethods();
+        $pathPercentageOfTestedClasses = $pathReport->getTestedClassesPercent();
+        $pathNumberOfTestedClasses = $pathReport->getNumTestedClasses();
+        $pathNumberOfClasses = $pathReport->getNumClasses();
+    } else {
+        // PHPUNIT 9
+        $pathNumberOfExecutableLines = $pathReport->numberOfExecutableLines();
+        $pathNumberOfExecutedLines = $pathReport->numberOfExecutedLines();
+        $pathPercentageOfExecutedLines = $pathReport->percentageOfExecutedLines()->asFloat();
+        $pathPercentageOfTestedMethods = $pathReport->percentageOfTestedMethods()->asFloat();
+        $pathNumberOfTestedMethods = $pathReport->numberOfTestedMethods();
+        $pathNumberOfMethods = $pathReport->numberOfMethods();
+        $pathPercentageOfTestedClasses = $pathReport->percentageOfTestedClasses()->asFloat();
+        $pathNumberOfTestedClasses = $pathReport->numberOfTestedClasses();
+        $pathNumberOfClasses = $pathReport->numberOfClasses();
+    }
+
     $table->setHeaders(['Coverage Metric', 'Relative Coverage', 'Absolute Coverage']);
     $table->addRow([
         'Line Coverage',
-        sprintf('%.2F%%', $pathReport->getLineExecutedPercent()),
-        sprintf('%d/%d', $pathReport->getNumExecutedLines(), $pathReport->getNumExecutableLines()),
+        sprintf('%.2F%%', $pathPercentageOfExecutedLines),
+        sprintf('%d/%d', $pathNumberOfExecutedLines, $pathNumberOfExecutableLines),
     ]);
     $table->addRow([
         'Method Coverage',
-        sprintf('%.2F%%', $pathReport->getTestedMethodsPercent()),
-        sprintf('%d/%d', $pathReport->getNumTestedMethods(), $pathReport->getNumMethods()),
+        sprintf('%.2F%%', $pathPercentageOfTestedMethods),
+        sprintf('%d/%d', $pathNumberOfTestedMethods, $pathNumberOfMethods),
     ]);
     $table->addRow([
         'Class Coverage',
-        sprintf('%.2F%%', $pathReport->getTestedClassesPercent()),
-        sprintf('%d/%d', $pathReport->getNumTestedClasses(), $pathReport->getNumClasses()),
+        sprintf('%.2F%%', $pathPercentageOfTestedClasses),
+        sprintf('%d/%d', $pathNumberOfTestedClasses, $pathNumberOfClasses),
     ]);
 
-    $io->title('Code coverage report for directory "' . $pathReport->getPath() . '"');
+    if (\method_exists($pathReport, 'getPath')) {
+        // PHPUNIT <= 8
+        $path = $pathReport->getPath();
+    } else {
+        // PHPUNIT 9
+        $path = $pathReport->pathAsString();
+    }
+
+    $io->title('Code coverage report for directory "' . $path . '"');
     $table->render();
     $io->newLine(1);
 }
@@ -207,7 +265,15 @@ function getReportForPath(Directory $rootReport, string $path): ?Directory
 
     /** @var Directory $report */
     foreach ($rootReport as $report) {
-        if (0 === mb_strpos($report->getPath(), $currentPath)) {
+        if (\method_exists($report, 'getPath')) {
+            // PHPUNIT <= 8
+            $path = $report->getPath();
+        } else {
+            // PHPUNIT 9
+            $path = $report->pathAsString();
+        }
+
+        if (0 === mb_strpos($path, $currentPath)) {
             return $report;
         }
     }
