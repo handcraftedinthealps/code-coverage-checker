@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use SebastianBergmann\CodeCoverage\CodeCoverage;
 use SebastianBergmann\CodeCoverage\Node\Directory;
+use SebastianBergmann\CodeCoverage\Node\File;
 use Symfony\Component\Console\Helper\Table;
 use Symfony\Component\Console\Helper\TableStyle;
 use Symfony\Component\Console\Input\ArgvInput;
@@ -21,7 +22,6 @@ foreach ($autoloaderFiles as $autoloaderFile) {
     }
 
     $loader = require $autoloaderFile;
-
 
     $phpunitBridgeDirectories = [
         dirname(realpath($autoloaderFile)) . '/bin/.phpunit',
@@ -85,7 +85,7 @@ $paths = $input->getArgument('paths');
 
 // Check all root paths if no paths are given
 if (empty($paths)) {
-    /** @var Directory $report */
+    /** @var Directory|File $report */
     foreach ($coverage->getReport() as $report) {
         if (\method_exists($report, 'getPath')) {
             // PHPUNIT <= 8
@@ -192,7 +192,10 @@ function assertCodeCoverage(CodeCoverage $coverage, string $path, string $metric
     return 0;
 }
 
-function printCodeCoverageReport(Directory $pathReport): void
+/**
+ * @param Directory|File $pathReport
+ */
+function printCodeCoverageReport($pathReport): void
 {
     global $io;
 
@@ -259,9 +262,24 @@ function printCodeCoverageReport(Directory $pathReport): void
     $io->newLine(1);
 }
 
-function getReportForPath(Directory $rootReport, string $path): ?Directory
+/**
+ * @return Directory|File|null
+ */
+function getReportForPath(Directory $rootReport, string $path)
 {
     $currentPath = getcwd() . DIRECTORY_SEPARATOR . $path;
+
+    if (\method_exists($rootReport, 'getPath')) {
+        // PHPUNIT <= 8
+        $rootPath = $rootReport->getPath();
+    } else {
+        // PHPUNIT 9
+        $rootPath = $rootReport->pathAsString();
+    }
+
+    if (0 === mb_strpos($rootPath, $currentPath)) {
+        return $rootReport;
+    }
 
     /** @var Directory $report */
     foreach ($rootReport as $report) {
