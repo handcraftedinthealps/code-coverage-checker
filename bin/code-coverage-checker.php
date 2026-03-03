@@ -136,38 +136,19 @@ function assertCodeCoverage(CodeCoverage $coverage, string $path, string $metric
 
     printCodeCoverageReport($pathReport);
 
-    if (\method_exists($pathReport, 'getNumExecutableLines')) {
-        // PHPUNIT <= 8
-        $pathNumberOfExecutableLines = $pathReport->getNumExecutableLines();
-        $pathNumberOfExecutedLines = $pathReport->getNumExecutedLines();
-        $pathPercentageOfExecutedLines = $pathReport->getLineExecutedPercent();
-        $pathPercentageOfTestedMethods = $pathReport->getTestedMethodsPercent();
-        $pathPercentageOfTestedClasses = $pathReport->getTestedClassesPercent();
-    } else {
-        // PHPUNIT 9
-        $pathNumberOfExecutableLines = $pathReport->numberOfExecutableLines();
-        $pathNumberOfExecutedLines = $pathReport->numberOfExecutedLines();
-        $pathPercentageOfExecutedLines = $pathReport->percentageOfExecutedLines()->asFloat();
-        $pathPercentageOfTestedMethods = $pathReport->percentageOfTestedMethods()->asFloat();
-        $pathPercentageOfTestedClasses = $pathReport->percentageOfTestedClasses()->asFloat();
-    }
+    $pathCoverageMetrics = extractCoverageMetrics($pathReport);
 
-    $totalExecutableLines = $totalExecutableLines + $pathNumberOfExecutableLines;
-    $totalCoveredLines = $totalCoveredLines + $pathNumberOfExecutedLines;
+    $totalExecutableLines = $totalExecutableLines + $pathCoverageMetrics['line']['total'];
+    $totalCoveredLines = $totalCoveredLines + $pathCoverageMetrics['line']['covered'];
 
-    if ('line' === $metric) {
-        $reportedCoverage = $pathPercentageOfExecutedLines;
-    } elseif ('method' === $metric) {
-        $reportedCoverage = $pathPercentageOfTestedMethods;
-    } elseif ('class' === $metric) {
-        $reportedCoverage = $pathPercentageOfTestedClasses;
-    } else {
+    $selectedMetric = getCoverageMetric($pathCoverageMetrics, $metric);
+    if (null === $selectedMetric) {
         $io->error('Coverage metric "' . $metric . '"" is not supported yet.');
 
         return 1;
     }
 
-    $reportedCoverage = (float) $reportedCoverage;
+    $reportedCoverage = $selectedMetric['percent'];
 
     if ($reportedCoverage < $threshold) {
         $io->error(sprintf(
@@ -176,6 +157,7 @@ function assertCodeCoverage(CodeCoverage $coverage, string $path, string $metric
             $path,
             $threshold
         ));
+        printFilesBelowThresholdReport($pathReport, $metric, $threshold);
         $io->newLine(1);
 
         return 1;
@@ -207,59 +189,230 @@ function printCodeCoverageReport($pathReport): void
     $table->setColumnStyle(1, $rightAlignedTableStyle);
     $table->setColumnStyle(2, $rightAlignedTableStyle);
 
-
-    if (\method_exists($pathReport, 'getNumExecutableLines')) {
-        // PHPUNIT <= 8
-        $pathNumberOfExecutableLines = $pathReport->getNumExecutableLines();
-        $pathNumberOfExecutedLines = $pathReport->getNumExecutedLines();
-        $pathPercentageOfExecutedLines = $pathReport->getLineExecutedPercent();
-        $pathPercentageOfTestedMethods = $pathReport->getTestedMethodsPercent();
-        $pathNumberOfTestedMethods = $pathReport->getNumTestedMethods();
-        $pathNumberOfMethods = $pathReport->getNumMethods();
-        $pathPercentageOfTestedClasses = $pathReport->getTestedClassesPercent();
-        $pathNumberOfTestedClasses = $pathReport->getNumTestedClasses();
-        $pathNumberOfClasses = $pathReport->getNumClasses();
-    } else {
-        // PHPUNIT 9
-        $pathNumberOfExecutableLines = $pathReport->numberOfExecutableLines();
-        $pathNumberOfExecutedLines = $pathReport->numberOfExecutedLines();
-        $pathPercentageOfExecutedLines = $pathReport->percentageOfExecutedLines()->asFloat();
-        $pathPercentageOfTestedMethods = $pathReport->percentageOfTestedMethods()->asFloat();
-        $pathNumberOfTestedMethods = $pathReport->numberOfTestedMethods();
-        $pathNumberOfMethods = $pathReport->numberOfMethods();
-        $pathPercentageOfTestedClasses = $pathReport->percentageOfTestedClasses()->asFloat();
-        $pathNumberOfTestedClasses = $pathReport->numberOfTestedClasses();
-        $pathNumberOfClasses = $pathReport->numberOfClasses();
-    }
+    $pathCoverageMetrics = extractCoverageMetrics($pathReport);
 
     $table->setHeaders(['Coverage Metric', 'Relative Coverage', 'Absolute Coverage']);
     $table->addRow([
         'Line Coverage',
-        sprintf('%.2F%%', $pathPercentageOfExecutedLines),
-        sprintf('%d/%d', $pathNumberOfExecutedLines, $pathNumberOfExecutableLines),
+        sprintf('%.2F%%', $pathCoverageMetrics['line']['percent']),
+        sprintf('%d/%d', $pathCoverageMetrics['line']['covered'], $pathCoverageMetrics['line']['total']),
     ]);
     $table->addRow([
         'Method Coverage',
-        sprintf('%.2F%%', $pathPercentageOfTestedMethods),
-        sprintf('%d/%d', $pathNumberOfTestedMethods, $pathNumberOfMethods),
+        sprintf('%.2F%%', $pathCoverageMetrics['method']['percent']),
+        sprintf('%d/%d', $pathCoverageMetrics['method']['covered'], $pathCoverageMetrics['method']['total']),
     ]);
     $table->addRow([
         'Class Coverage',
-        sprintf('%.2F%%', $pathPercentageOfTestedClasses),
-        sprintf('%d/%d', $pathNumberOfTestedClasses, $pathNumberOfClasses),
+        sprintf('%.2F%%', $pathCoverageMetrics['class']['percent']),
+        sprintf('%d/%d', $pathCoverageMetrics['class']['covered'], $pathCoverageMetrics['class']['total']),
     ]);
 
-    if (\method_exists($pathReport, 'getPath')) {
-        // PHPUNIT <= 8
-        $path = $pathReport->getPath();
-    } else {
-        // PHPUNIT 9
-        $path = $pathReport->pathAsString();
-    }
+    $path = getReportPath($pathReport);
 
     $io->title('Code coverage report for directory "' . $path . '"');
     $table->render();
     $io->newLine(1);
+}
+
+/**
+ * @param Directory|File $report
+ */
+function getReportPath($report): string
+{
+    if (\method_exists($report, 'getPath')) {
+        // PHPUNIT <= 8
+        return $report->getPath();
+    }
+
+    // PHPUNIT 9
+    return $report->pathAsString();
+}
+
+/**
+ * @param Directory|File $report
+ *
+ * @return array<string, array{percent: float, covered: int, total: int}>
+ */
+function extractCoverageMetrics($report): array
+{
+    if (\method_exists($report, 'getNumExecutableLines')) {
+        // PHPUNIT <= 8
+        $lineTotal = $report->getNumExecutableLines();
+        $lineCovered = $report->getNumExecutedLines();
+        $linePercent = $report->getLineExecutedPercent();
+        $methodTotal = $report->getNumMethods();
+        $methodCovered = $report->getNumTestedMethods();
+        $methodPercent = $report->getTestedMethodsPercent();
+        $classTotal = $report->getNumClasses();
+        $classCovered = $report->getNumTestedClasses();
+        $classPercent = $report->getTestedClassesPercent();
+    } else {
+        // PHPUNIT 9
+        $lineTotal = $report->numberOfExecutableLines();
+        $lineCovered = $report->numberOfExecutedLines();
+        $linePercent = $report->percentageOfExecutedLines()->asFloat();
+        $methodTotal = $report->numberOfMethods();
+        $methodCovered = $report->numberOfTestedMethods();
+        $methodPercent = $report->percentageOfTestedMethods()->asFloat();
+        $classTotal = $report->numberOfClasses();
+        $classCovered = $report->numberOfTestedClasses();
+        $classPercent = $report->percentageOfTestedClasses()->asFloat();
+    }
+
+    return [
+        'line' => [
+            'percent' => (float) $linePercent,
+            'covered' => (int) $lineCovered,
+            'total' => (int) $lineTotal,
+        ],
+        'method' => [
+            'percent' => (float) $methodPercent,
+            'covered' => (int) $methodCovered,
+            'total' => (int) $methodTotal,
+        ],
+        'class' => [
+            'percent' => (float) $classPercent,
+            'covered' => (int) $classCovered,
+            'total' => (int) $classTotal,
+        ],
+    ];
+}
+
+/**
+ * @param array<string, array{percent: float, covered: int, total: int}> $coverageMetrics
+ *
+ * @return array{percent: float, covered: int, total: int}|null
+ */
+function getCoverageMetric(array $coverageMetrics, string $metric): ?array
+{
+    if ('line' === $metric || 'method' === $metric || 'class' === $metric) {
+        return $coverageMetrics[$metric];
+    }
+
+    return null;
+}
+
+/**
+ * @param Directory|File $pathReport
+ */
+function printFilesBelowThresholdReport($pathReport, string $metric, float $threshold): void
+{
+    global $io;
+
+    $failingFiles = deduplicateFailingFilesByPath(collectFilesBelowThreshold($pathReport, $metric, $threshold));
+    usort($failingFiles, static function (array $firstFile, array $secondFile): int {
+        if ($firstFile['percent'] < $secondFile['percent']) {
+            return -1;
+        }
+
+        if ($firstFile['percent'] > $secondFile['percent']) {
+            return 1;
+        }
+
+        return strcmp($firstFile['path'], $secondFile['path']);
+    });
+
+    $io->title(sprintf(
+        'Files below threshold (metric "%s", threshold %.2F%%)',
+        $metric,
+        $threshold
+    ));
+
+    if (empty($failingFiles)) {
+        $io->text('No individual files below threshold were found for this metric.');
+
+        return;
+    }
+
+    $rightAlignedTableStyle = new TableStyle();
+    $rightAlignedTableStyle->setPadType(STR_PAD_LEFT);
+
+    $table = new Table($io);
+    $table->setColumnStyle(1, $rightAlignedTableStyle);
+    $table->setColumnStyle(2, $rightAlignedTableStyle);
+    $table->setHeaders(['File', 'Relative Coverage', 'Absolute Coverage']);
+
+    foreach ($failingFiles as $failingFile) {
+        $table->addRow([
+            $failingFile['path'],
+            sprintf('%.2F%%', $failingFile['percent']),
+            sprintf('%d/%d', $failingFile['covered'], $failingFile['total']),
+        ]);
+    }
+
+    $table->render();
+}
+
+/**
+ * @param Directory|File $pathReport
+ *
+ * @return array<int, array{path: string, percent: float, covered: int, total: int}>
+ */
+function collectFilesBelowThreshold($pathReport, string $metric, float $threshold): array
+{
+    if ($pathReport instanceof File) {
+        $fileCoverageMetrics = extractCoverageMetrics($pathReport);
+        $fileMetric = getCoverageMetric($fileCoverageMetrics, $metric);
+
+        if (null === $fileMetric || $fileMetric['percent'] >= $threshold) {
+            return [];
+        }
+
+        return [[
+            'path' => getRelativePath(getReportPath($pathReport)),
+            'percent' => $fileMetric['percent'],
+            'covered' => $fileMetric['covered'],
+            'total' => $fileMetric['total'],
+        ]];
+    }
+
+    $failingFiles = [];
+    /** @var Directory|File $report */
+    foreach ($pathReport as $report) {
+        $failingFiles = array_merge(
+            $failingFiles,
+            collectFilesBelowThreshold($report, $metric, $threshold)
+        );
+    }
+
+    return $failingFiles;
+}
+
+/**
+ * @param array<int, array{path: string, percent: float, covered: int, total: int}> $failingFiles
+ *
+ * @return array<int, array{path: string, percent: float, covered: int, total: int}>
+ */
+function deduplicateFailingFilesByPath(array $failingFiles): array
+{
+    $uniqueFailingFiles = [];
+
+    foreach ($failingFiles as $failingFile) {
+        $path = $failingFile['path'];
+
+        if (!isset($uniqueFailingFiles[$path])) {
+            $uniqueFailingFiles[$path] = $failingFile;
+
+            continue;
+        }
+
+        if ($failingFile['percent'] < $uniqueFailingFiles[$path]['percent']) {
+            $uniqueFailingFiles[$path] = $failingFile;
+        }
+    }
+
+    return array_values($uniqueFailingFiles);
+}
+
+function getRelativePath(string $path): string
+{
+    $currentDirectory = getcwd() . DIRECTORY_SEPARATOR;
+    if (0 === mb_strpos($path, $currentDirectory)) {
+        return mb_substr($path, mb_strlen($currentDirectory));
+    }
+
+    return $path;
 }
 
 /**
@@ -269,13 +422,7 @@ function getReportForPath(Directory $rootReport, string $path)
 {
     $currentPath = getcwd() . DIRECTORY_SEPARATOR . $path;
 
-    if (\method_exists($rootReport, 'getPath')) {
-        // PHPUNIT <= 8
-        $rootPath = $rootReport->getPath();
-    } else {
-        // PHPUNIT 9
-        $rootPath = $rootReport->pathAsString();
-    }
+    $rootPath = getReportPath($rootReport);
 
     if (0 === mb_strpos($rootPath, $currentPath)) {
         return $rootReport;
@@ -283,13 +430,7 @@ function getReportForPath(Directory $rootReport, string $path)
 
     /** @var Directory $report */
     foreach ($rootReport as $report) {
-        if (\method_exists($report, 'getPath')) {
-            // PHPUNIT <= 8
-            $path = $report->getPath();
-        } else {
-            // PHPUNIT 9
-            $path = $report->pathAsString();
-        }
+        $path = getReportPath($report);
 
         if (0 === mb_strpos($path, $currentPath)) {
             return $report;
