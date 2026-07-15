@@ -3,8 +3,11 @@
 declare(strict_types=1);
 
 use SebastianBergmann\CodeCoverage\CodeCoverage;
+use SebastianBergmann\CodeCoverage\Node\Builder;
 use SebastianBergmann\CodeCoverage\Node\Directory;
 use SebastianBergmann\CodeCoverage\Node\File;
+use SebastianBergmann\CodeCoverage\StaticAnalysis\FileAnalyser;
+use SebastianBergmann\CodeCoverage\StaticAnalysis\ParsingSourceAnalyser;
 use Symfony\Component\Console\Helper\Table;
 use Symfony\Component\Console\Helper\TableStyle;
 use Symfony\Component\Console\Input\ArgvInput;
@@ -78,15 +81,17 @@ if (!is_readable($coverageReportPath)) {
     exit(1);
 }
 
-/** @var CodeCoverage $coverage */
+/** @var CodeCoverage|array $coverage */
 $coverage = require $coverageReportPath;
+
+$rootReport = buildRootReport($coverage);
 
 $paths = $input->getArgument('paths');
 
 // Check all root paths if no paths are given
 if (empty($paths)) {
     /** @var Directory|File $report */
-    foreach ($coverage->getReport() as $report) {
+    foreach ($rootReport as $report) {
         if (\method_exists($report, 'getPath')) {
             // PHPUNIT <= 8
             $path = $report->getPath();
@@ -106,7 +111,7 @@ $totalCoveredLines = 0;
 $exit = 0;
 
 foreach ($paths as $path) {
-    $exit += assertCodeCoverage($coverage, $path, $metric, $threshold);
+    $exit += assertCodeCoverage($rootReport, $path, $metric, $threshold);
 }
 
 $message = sprintf(
@@ -119,13 +124,41 @@ $io->block($message, 'INFO', 'fg=black;bg=white', ' ', true);
 
 exit($exit);
 
-function assertCodeCoverage(CodeCoverage $coverage, string $path, string $metric, float $threshold)
+/**
+ * Builds the root coverage report node from the value returned by the coverage report file.
+ *
+ * @param CodeCoverage|array<string, mixed> $coverage
+ */
+function buildRootReport($coverage): Directory
+{
+    global $io;
+
+    // sebastianbergmann/php-code-coverage 13.x and earlier (bundled with PHPUnit <= 13.0) serialized the whole
+    // CodeCoverage object.
+    if ($coverage instanceof CodeCoverage) {
+        return $coverage->getReport();
+    }
+
+    // sebastianbergmann/php-code-coverage 14.x and later (bundled with PHPUnit >= 13.1) serializes a plain array
+    // instead of the CodeCoverage object. This mirrors SebastianBergmann\CodeCoverage\Report\Facade::buildReport().
+    if (is_array($coverage) && isset($coverage['codeCoverage'])) {
+        return (new Builder(new FileAnalyser(new ParsingSourceAnalyser(), false, false)))->build(
+            $coverage['codeCoverage'],
+            $coverage['testResults'],
+            $coverage['basePath']
+        );
+    }
+
+    $io->error('Unsupported coverage report format. Expected a CodeCoverage object or a serialized coverage array.');
+    exit(1);
+}
+
+function assertCodeCoverage(Directory $rootReport, string $path, string $metric, float $threshold)
 {
     global $io;
     global $totalExecutableLines;
     global $totalCoveredLines;
 
-    $rootReport = $coverage->getReport();
     $pathReport = getReportForPath($rootReport, $path);
 
     if (!$pathReport) {
